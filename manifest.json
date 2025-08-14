@@ -10,7 +10,9 @@
     "storage"
   ],
   "host_permissions": [
-    "https://*.instagram.com/*"
+    "https://*.instagram.com/*",
+    "http://pampakim.synology.me/*",
+    "https://pampakim.synology.me/*"
   ],
   "background": {
     "service_worker": "background.js"

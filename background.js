@@ -186,7 +186,11 @@ async function sendSessionToSynology(sessionIdValue, testMode = false) {
   const token = (settings.synology_token || "").trim();
 
   const headers = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = token;
+  if (token) {
+    // 사용자가 순수 토큰만 입력한 경우 자동으로 Bearer 접두어를 부여합니다.
+    const looksPrefixed = /^\s*\w+\s+\S+/.test(token) || /^\s*Bearer\s+/i.test(token);
+    headers["Authorization"] = looksPrefixed ? token : `Bearer ${token}`;
+  }
 
   const body = { service: "instagram", key: "sessionid", value: sessionIdValue, ts: Date.now() };
 
