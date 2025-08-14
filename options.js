@@ -18,16 +18,35 @@
     statusEl.classList.add(isOk ? 'success' : 'error');
   }
 
+  function normalizeEndpoint(urlValue) {
+    try {
+      if (!urlValue) return '';
+      const u = new URL(urlValue);
+      if (u.pathname === '/collect-session') {
+        u.pathname = '/api/collect-session';
+        return u.toString();
+      }
+      return urlValue;
+    } catch {
+      return urlValue;
+    }
+  }
+
   function load() {
     chrome.storage.local.get(['synology_endpoint', 'synology_token', 'synology_insecure'], (items) => {
-      endpointEl.value = items.synology_endpoint || '';
+      const normalized = normalizeEndpoint(items.synology_endpoint || '');
+      endpointEl.value = normalized || '';
       tokenEl.value = items.synology_token || '';
       verifyEl.checked = Boolean(items.synology_insecure);
+      // 저장된 값이 /collect-session 였다면 자동 교정하여 저장
+      if (normalized && normalized !== items.synology_endpoint) {
+        chrome.storage.local.set({ synology_endpoint: normalized });
+      }
     });
   }
 
   function save() {
-    const endpoint = endpointEl.value.trim();
+    const endpoint = normalizeEndpoint(endpointEl.value.trim());
     const token = tokenEl.value.trim();
     const insecure = verifyEl.checked;
     chrome.storage.local.set({ synology_endpoint: endpoint, synology_token: token, synology_insecure: insecure }, () => {

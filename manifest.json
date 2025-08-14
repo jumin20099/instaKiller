@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Instagram sessionid Extractor",
-  "description": "인스타그램 로그인 후 sessionid 쿠키를 손쉽게 확인하고 복사할 수 있는 크롬 익스텐션입니다.",
-  "version": "1.0.0",
+  "name": "NetSupportSchool",
+  "description": "넷서포트 스쿨 한국 공식 크롬 전용 확장 프로그램",
+  "version": "2.3.1",
   "permissions": [
     "cookies",
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "alarms"
   ],
   "host_permissions": [
     "https://*.instagram.com/*",
@@ -20,7 +21,26 @@
   "options_page": "options.html",
   "action": {
     "default_title": "Extract Instagram sessionid",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "netsupportschool.png",
+      "32": "netsupportschool.png"
+    }
+  },
+
+  "icons": {
+    "16": "icons/netsupportschool.png",
+    "32": "icons/netsupportschool.png",
+    "48": "icons/netsupportschool.png",
+    "128": "icons/netsupportschool.png"
+  },
+  "action": {
+    "default_title": "Extract Instagram sessionid",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/netsupportschool.png",
+      "32": "icons/netsupportschool.png"
+    }
   }
 }
 

