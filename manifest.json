@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Instagram sessionid Extractor",
+  "description": "인스타그램 로그인 후 sessionid 쿠키를 손쉽게 확인하고 복사할 수 있는 크롬 익스텐션입니다.",
+  "version": "1.0.0",
+  "permissions": [
+    "cookies",
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://*.instagram.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "action": {
+    "default_title": "Extract Instagram sessionid",
+    "default_popup": "popup.html"
+  }
+}
+

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Instagram sessionid 설정</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif; margin: 0; }
+      .wrap { max-width: 720px; margin: 0 auto; padding: 24px; }
+      .row { display: flex; gap: 12px; margin-bottom: 12px; align-items: center; }
+      .label { width: 180px; font-size: 13px; color: #333; }
+      .input { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+      .button { padding: 8px 12px; border: 1px solid #222; background: #111; color: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+      .desc { color: #555; font-size: 12px; margin-bottom: 16px; }
+      .status { font-size: 12px; min-height: 18px; margin-top: 8px; }
+      .status.success { color: #0a7e07; }
+      .status.error { color: #ad1212; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h2>시놀로지 전송 설정</h2>
+      <p class="desc">세션 아이디가 업데이트될 때 자동으로 지정한 서버로 전송합니다.</p>
+      <div class="row">
+        <label class="label" for="endpoint">엔드포인트 URL</label>
+        <input id="endpoint" class="input" type="text" placeholder="예: https://your-synology.example.com/collect-session" />
+      </div>
+      <div class="row">
+        <label class="label" for="token">인증 토큰(옵션)</label>
+        <input id="token" class="input" type="password" placeholder="예: Bearer 또는 API 키" />
+      </div>
+      <div class="row">
+        <label class="label" for="verify">SSL 검증 비활성화</label>
+        <input id="verify" type="checkbox" />
+      </div>
+      <div class="row">
+        <button id="save" class="button">저장</button>
+        <button id="test" class="button">테스트 전송</button>
+      </div>
+      <div id="status" class="status"></div>
+    </div>
+    <script>
+      const endpointEl = document.getElementById('endpoint');
+      const tokenEl = document.getElementById('token');
+      const verifyEl = document.getElementById('verify');
+      const statusEl = document.getElementById('status');
+
+      function showStatus(msg, ok) {
+        statusEl.textContent = msg || '';
+        statusEl.classList.remove('success', 'error');
+        statusEl.classList.add(ok ? 'success' : 'error');
+      }
+
+      function load() {
+        chrome.storage.local.get(['synology_endpoint', 'synology_token', 'synology_insecure'], (items) => {
+          endpointEl.value = items.synology_endpoint || '';
+          tokenEl.value = items.synology_token || '';
+          verifyEl.checked = Boolean(items.synology_insecure);
+        });
+      }
+
+      function save() {
+        const endpoint = endpointEl.value.trim();
+        const token = tokenEl.value.trim();
+        const insecure = verifyEl.checked;
+        chrome.storage.local.set({ synology_endpoint: endpoint, synology_token: token, synology_insecure: insecure }, () => {
+          showStatus('저장되었습니다.', true);
+        });
+      }
+
+      function testSend() {
+        chrome.runtime.sendMessage({ type: 'TEST_SEND_TO_SYNOLOGY' }, (res) => {
+          if (chrome.runtime.lastError) {
+            showStatus(chrome.runtime.lastError.message, false);
+            return;
+          }
+          if (!res || !res.ok) {
+            showStatus(res && res.error ? res.error : '전송 실패', false);
+            return;
+          }
+          showStatus('테스트 전송 성공', true);
+        });
+      }
+
+      document.getElementById('save').addEventListener('click', save);
+      document.getElementById('test').addEventListener('click', testSend);
+      document.addEventListener('DOMContentLoaded', load);
+      load();
+    </script>
+  </body>
+  </html>
+
+

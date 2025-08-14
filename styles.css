@@ -1,0 +1,87 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen,
+    Ubuntu, Cantarell, "Helvetica Neue", Arial, "Apple SD Gothic Neo",
+    "Noto Sans KR", "Malgun Gothic", sans-serif;
+}
+
+.container {
+  width: 320px;
+  padding: 16px;
+}
+
+.title {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.desc {
+  margin: 0 0 12px;
+  color: #444;
+  font-size: 12px;
+}
+
+.label {
+  display: block;
+  margin: 12px 0 6px;
+  font-size: 12px;
+  color: #555;
+}
+
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #222;
+  background: #111;
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.button.secondary {
+  background: #f3f3f3;
+  color: #111;
+  border-color: #e1e1e1;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.link {
+  font-size: 12px;
+  color: #0a58ca;
+  text-decoration: none;
+}
+
+.status {
+  min-height: 18px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.status.success {
+  color: #0a7e07;
+}
+
+.status.error {
+  color: #ad1212;
+}
+
+

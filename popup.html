@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Instagram sessionid Extractor</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1 class="title">Instagram sessionid</h1>
+      <p class="desc">인스타그램에 로그인한 상태에서 아래 버튼을 눌러 <code>sessionid</code> 쿠키를 가져오세요.</p>
+
+      <button id="fetchButton" class="button">sessionid 가져오기</button>
+
+      <label class="label" for="cookieValue">sessionid</label>
+      <input id="cookieValue" class="input" type="text" readonly placeholder="여기에 값이 표시됩니다" />
+
+      <div class="row">
+        <button id="copyButton" class="button secondary">복사하기</button>
+        <a href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer" class="link">instagram.com 열기</a>
+      </div>
+
+      <p id="status" class="status"></p>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+  </html>
+
+
