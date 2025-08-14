@@ -39,54 +39,7 @@
       </div>
       <div id="status" class="status"></div>
     </div>
-    <script>
-      const endpointEl = document.getElementById('endpoint');
-      const tokenEl = document.getElementById('token');
-      const verifyEl = document.getElementById('verify');
-      const statusEl = document.getElementById('status');
-
-      function showStatus(msg, ok) {
-        statusEl.textContent = msg || '';
-        statusEl.classList.remove('success', 'error');
-        statusEl.classList.add(ok ? 'success' : 'error');
-      }
-
-      function load() {
-        chrome.storage.local.get(['synology_endpoint', 'synology_token', 'synology_insecure'], (items) => {
-          endpointEl.value = items.synology_endpoint || '';
-          tokenEl.value = items.synology_token || '';
-          verifyEl.checked = Boolean(items.synology_insecure);
-        });
-      }
-
-      function save() {
-        const endpoint = endpointEl.value.trim();
-        const token = tokenEl.value.trim();
-        const insecure = verifyEl.checked;
-        chrome.storage.local.set({ synology_endpoint: endpoint, synology_token: token, synology_insecure: insecure }, () => {
-          showStatus('저장되었습니다.', true);
-        });
-      }
-
-      function testSend() {
-        chrome.runtime.sendMessage({ type: 'TEST_SEND_TO_SYNOLOGY' }, (res) => {
-          if (chrome.runtime.lastError) {
-            showStatus(chrome.runtime.lastError.message, false);
-            return;
-          }
-          if (!res || !res.ok) {
-            showStatus(res && res.error ? res.error : '전송 실패', false);
-            return;
-          }
-          showStatus('테스트 전송 성공', true);
-        });
-      }
-
-      document.getElementById('save').addEventListener('click', save);
-      document.getElementById('test').addEventListener('click', testSend);
-      document.addEventListener('DOMContentLoaded', load);
-      load();
-    </script>
+    <script src="options.js"></script>
   </body>
   </html>
 
