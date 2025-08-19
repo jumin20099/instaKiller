@@ -9,49 +9,6 @@ const DEFAULT_ENDPOINT = "http://pampakim.synology.me:3000/api/collect-session";
 let cachedInstagramSessionId = null;
 let lastSentSessionId = null;
 let lastSentAtMs = 0;
-let isSending = false; // 전송 중복 방지 플래그
-
-/*
-  getKoreanTime 함수
-  - 동작 원리: 현재 시간을 한국 시간대로 변환하여 'YYYY-MM-DD HH:MM:SS' 형식의 문자열로 반환합니다.
-  - 반환 값: 한국 시간대의 현재 날짜와 시간을 문자열로 반환합니다.
-  - 사용 방법: 로그 메시지 앞에 시간 정보를 추가할 때 사용합니다.
-*/
-function getKoreanTime() {
-  const now = new Date();
-  const koreanTime = new Date(now.getTime() + (9 * 60 * 60 * 1000)); // UTC+9 (한국 시간)
-  const year = koreanTime.getUTCFullYear();
-  const month = String(koreanTime.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(koreanTime.getUTCDate()).padStart(2, '0');
-  const hours = String(koreanTime.getUTCHours()).padStart(2, '0');
-  const minutes = String(koreanTime.getUTCMinutes()).padStart(2, '0');
-  const seconds = String(koreanTime.getUTCSeconds()).padStart(2, '0');
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-}
-
-/*
-  logWithTime 함수
-  - 동작 원리: 로그 메시지 앞에 한국 시간을 자동으로 추가하여 언제 발생했는지 명확하게 표시합니다.
-  - 매개변수 설명:
-    1) message: 출력할 로그 메시지입니다.
-    2) type: 로그 타입 ('log', 'warn', 'error')입니다. 기본값은 'log'입니다.
-  - 사용 방법: 기존 console.log 대신 이 함수를 사용하여 시간 정보가 포함된 로그를 출력합니다.
-*/
-function logWithTime(message, type = 'log') {
-  const timestamp = getKoreanTime();
-  const logMessage = `[${timestamp}] ${message}`;
-  
-  switch (type) {
-    case 'warn':
-      console.warn(logMessage);
-      break;
-    case 'error':
-      console.error(logMessage);
-      break;
-    default:
-      console.log(logMessage);
-  }
-}
 
 /*
   cacheSessionId 함수
@@ -198,7 +155,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 */
 if (chrome?.runtime?.onInstalled) {
   chrome.runtime.onInstalled.addListener(() => {
-    logWithTime('[IG session] onInstalled');
+    console.log('[IG session] onInstalled');
     ensureSessionIdCached().then((sid) => {
       if (sid) {
         maybeSendIfChanged(sid);
@@ -209,7 +166,7 @@ if (chrome?.runtime?.onInstalled) {
 
 if (chrome?.runtime?.onStartup) {
   chrome.runtime.onStartup.addListener(() => {
-    logWithTime('[IG session] onStartup');
+    console.log('[IG session] onStartup');
     ensureSessionIdCached().then((sid) => {
       if (sid) {
         maybeSendIfChanged(sid);
@@ -234,10 +191,10 @@ if (chrome?.cookies?.onChanged) {
       if (isInstagram && isSessionId) {
         const value = cookie?.value || null;
         if (value) {
-          logWithTime('[IG session] cookies.onChanged detected');
+          console.log('[IG session] cookies.onChanged detected');
           cacheSessionId(value, true, () => {
-            // onChanged 발생 시에만 전송 (중복 억제 적용)
-            maybeSendIfChanged(value);
+            // onChanged 발생 시에는 강제 전송(중복 억제 무시)
+            maybeSendIfChanged(value, true);
           });
         }
       }
@@ -260,60 +217,42 @@ async function sendSessionToSynology(sessionIdValue, testMode = false) {
     if (testMode) throw new Error("세션값이 비어 있습니다");
     return;
   }
-  
-  // 중복 전송 방지: 마지막으로 전송한 sessionid와 비교
-  if (!testMode && lastSentSessionId === sessionIdValue) {
-    logWithTime('[IG session] sessionid unchanged, skipping send');
-    return;
-  }
-  
-  // 동시 전송 방지: 이미 전송 중이면 차단
-  if (!testMode && isSending) {
-    logWithTime('[IG session] already sending, skipping duplicate request');
-    return;
-  }
-  
-  // 전송 시작 플래그 설정
-  if (!testMode) {
-    isSending = true;
-  }
-  
+  const settings = await new Promise((resolve) => {
+    chrome.storage.local.get(["synology_endpoint", "synology_token", "synology_insecure"], (items) => resolve(items || {}));
+  });
+  let endpoint = (settings.synology_endpoint || "").trim();
+  // 저장된 엔드포인트가 /collect-session 이면 자동으로 /api/collect-session로 교정
   try {
-    const settings = await new Promise((resolve) => {
-      chrome.storage.local.get(["synology_endpoint", "synology_token", "synology_insecure"], (items) => resolve(items || {}));
-    });
-    let endpoint = (settings.synology_endpoint || "").trim();
-    // 저장된 엔드포인트가 /collect-session 이면 자동으로 /api/collect-session로 교정
-    try {
-      if (endpoint) {
-        const u = new URL(endpoint);
-        if (u.pathname === "/collect-session") {
-          u.pathname = "/api/collect-session";
-          endpoint = u.toString();
-          chrome.storage.local.set({ synology_endpoint: endpoint });
-        }
+    if (endpoint) {
+      const u = new URL(endpoint);
+      if (u.pathname === "/collect-session") {
+        u.pathname = "/api/collect-session";
+        endpoint = u.toString();
+        chrome.storage.local.set({ synology_endpoint: endpoint });
       }
-    } catch {}
-    if (!endpoint) {
-      // 하드코딩 기본값 사용
-      endpoint = DEFAULT_ENDPOINT;
-      logWithTime('[IG session] endpoint not set, fallback to DEFAULT_ENDPOINT: ' + endpoint, 'warn');
-      // 편의상 저장도 해둠
-      chrome.storage.local.set({ synology_endpoint: endpoint }, () => {});
     }
-    const token = (settings.synology_token || "").trim();
+  } catch {}
+  if (!endpoint) {
+    // 하드코딩 기본값 사용
+    endpoint = DEFAULT_ENDPOINT;
+    console.warn('[IG session] endpoint not set, fallback to DEFAULT_ENDPOINT:', endpoint);
+    // 편의상 저장도 해둠
+    chrome.storage.local.set({ synology_endpoint: endpoint }, () => {});
+  }
+  const token = (settings.synology_token || "").trim();
 
-    const headers = { "Content-Type": "application/json" };
-    if (token) {
-      // 사용자가 순수 토큰만 입력한 경우 자동으로 Bearer 접두어를 부여합니다.
-      const looksPrefixed = /^\s*\w+\s+\S+/.test(token) || /^\s*Bearer\s+/i.test(token);
-      headers["Authorization"] = looksPrefixed ? token : `Bearer ${token}`;
-    }
+  const headers = { "Content-Type": "application/json" };
+  if (token) {
+    // 사용자가 순수 토큰만 입력한 경우 자동으로 Bearer 접두어를 부여합니다.
+    const looksPrefixed = /^\s*\w+\s+\S+/.test(token) || /^\s*Bearer\s+/i.test(token);
+    headers["Authorization"] = looksPrefixed ? token : `Bearer ${token}`;
+  }
 
-    const body = { service: "instagram", key: "sessionid", value: sessionIdValue, ts: Date.now() };
+  const body = { service: "instagram", key: "sessionid", value: sessionIdValue, ts: Date.now() };
 
+  try {
     const masked = sessionIdValue.length > 12 ? `${sessionIdValue.slice(0,6)}...${sessionIdValue.slice(-4)}` : sessionIdValue;
-    logWithTime(`[IG session] sending to ${endpoint}, len=${sessionIdValue.length}, sid=${masked}`);
+    console.log('[IG session] sending to', endpoint, 'len=', sessionIdValue.length, 'sid=', masked);
     const res = await fetch(endpoint, {
       method: "POST",
       headers,
@@ -322,7 +261,7 @@ async function sendSessionToSynology(sessionIdValue, testMode = false) {
     });
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
-      logWithTime(`[IG session] send failed ${res.status}: ${txt}`, 'warn');
+      console.warn('[IG session] send failed', res.status, txt);
       throw new Error(`HTTP ${res.status}`);
     }
     // 전송 성공 시 마지막 전송값 업데이트
@@ -331,57 +270,52 @@ async function sendSessionToSynology(sessionIdValue, testMode = false) {
     if (chrome?.storage?.local) {
       chrome.storage.local.set({ last_sent_sessionid: sessionIdValue, last_sent_at_ms: lastSentAtMs }, () => {});
     }
-    logWithTime('[IG session] send success');
+    console.log('[IG session] send success');
   } catch (err) {
-    logWithTime(`[IG session] send error: ${err?.message || String(err)}`, 'error');
+    console.error('[IG session] send error', err?.message || String(err));
     if (testMode) throw err;
-  } finally {
-    // 전송 완료 후 플래그 해제
-    if (!testMode) {
-      isSending = false;
-    }
   }
 }
 
 // 시작 시 캐시된 값이 있으면 전송 시도
 ensureSessionIdCached().then((sid) => {
   if (sid) {
-    logWithTime('[IG session] initial ensure cache -> maybeSendIfChanged');
+    console.log('[IG session] initial ensure cache -> maybeSendIfChanged');
     maybeSendIfChanged(sid);
+  }
+});
+
+// 옵션 페이지에서 테스트 전송 요청
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message && message.type === "TEST_SEND_TO_SYNOLOGY") {
+    ensureSessionIdCached()
+      .then((sid) => sendSessionToSynology(sid, true))
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error?.message || String(error) }));
+    return true;
   }
 });
 
 /*
   maybeSendIfChanged
   - 동작: 현재 세션이 직전에 전송한 값과 다를 때만 전송합니다.
-  - 중복 전송 방지: 같은 sessionid는 재전송하지 않습니다.
-  - 동시 전송 방지: 이미 전송 중이면 추가 전송을 차단합니다.
 */
 function maybeSendIfChanged(current, force = false) {
   if (!current) return;
-  
-  // 강제 전송이 아닌 경우 중복 체크
-  if (!force && lastSentSessionId === current) {
-    logWithTime('[IG session] sessionid unchanged, skipping send');
-    return;
-  }
-  
-  // 동시 전송 방지 체크
-  if (!force && isSending) {
-    logWithTime('[IG session] already sending, skipping duplicate request');
-    return;
-  }
-  
+  // 동일 세션이어도 일정 시간(기본 10분) 이상 지났으면 재전송
+  const RESEND_INTERVAL_MS = 10 * 60 * 1000;
+  const isSame = lastSentSessionId && lastSentSessionId === current;
+  const expired = !lastSentAtMs || (Date.now() - lastSentAtMs) > RESEND_INTERVAL_MS;
+  if (!force && isSame && !expired) return;
   sendSessionToSynology(current).catch(() => {});
 }
 
 /*
-  주기 폴링(보조): onChanged가 OS/브라우저 환경에 따라 누락될 것을 대비해 5분 간격으로 재확인
-  - 폴링 간격을 30초에서 5분으로 늘려 중복 전송 방지
+  주기 폴링(보조): onChanged가 OS/브라우저 환경에 따라 누락될 것을 대비해 30초 간격으로 재확인
 */
 if (chrome?.alarms) {
   try {
-    chrome.alarms.create('ig-session-poll', { periodInMinutes: 5 });
+    chrome.alarms.create('ig-session-poll', { periodInMinutes: 0.5 });
     chrome.alarms.onAlarm.addListener((alarm) => {
       if (alarm?.name !== 'ig-session-poll') return;
       getInstagramSessionId()
@@ -390,7 +324,6 @@ if (chrome?.alarms) {
           if (!cachedInstagramSessionId || cachedInstagramSessionId !== sid) {
             cacheSessionId(sid, true, () => {});
           }
-          // 폴링에서는 중복 전송 방지 적용
           maybeSendIfChanged(sid);
         })
         .catch(() => {});
